@@ -1,8 +1,17 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { logger } from "../utils/logger";
+import { AI_CONFIG, FALLBACK_RESPONSES, PROMPT_KEYWORDS } from "../constants";
+
+// Type definitions for safety settings
+type SafetySetting = {
+  category: string;
+  threshold: string;
+};
 
 // ⚠️ SAFETY OFF: Lăsăm AI-ul să fie "unhinged".
-// @ts-ignore - Safety settings for unrestricted content
-const safetyConfig: any = [
+// NOTE: All safety filters are disabled for unrestricted content generation.
+// This is intentional for the app's humor style but should be documented.
+const safetyConfig: SafetySetting[] = [
   { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
   { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
   { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
@@ -18,41 +27,46 @@ const getApiKey = (): string => {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || '';
     return apiKey || '';
   } catch (e) {
-    console.warn("Error reading API key:", e);
+    logger.warn("Error reading API key:", e);
     return '';
   }
 };
 
-export const askAI = async (prompt: string) => {
+// Extract fallback logic to shared function
+const getFallbackResponse = (prompt: string): string => {
+  if (prompt.includes(PROMPT_KEYWORDS.ROAST)) {
+    return FALLBACK_RESPONSES.ROASTS[Math.floor(Math.random() * FALLBACK_RESPONSES.ROASTS.length)];
+  }
+  if (prompt.includes(PROMPT_KEYWORDS.MANAGER)) {
+    return FALLBACK_RESPONSES.MANAGER_RESPONSES[Math.floor(Math.random() * FALLBACK_RESPONSES.MANAGER_RESPONSES.length)];
+  }
+  if (prompt.includes(PROMPT_KEYWORDS.DARE)) {
+    return FALLBACK_RESPONSES.DARES[Math.floor(Math.random() * FALLBACK_RESPONSES.DARES.length)];
+  }
+  return FALLBACK_RESPONSES.DEFAULT;
+};
+
+export const askAI = async (prompt: string): Promise<string> => {
   const apiKey = getApiKey();
   
   // Debug log to help troubleshoot
   if (apiKey) {
-      console.log("✅ API Key loaded successfully (Free Tier Ready)");
-      console.log("🔑 Key starts with:", apiKey.substring(0, 10) + "...");
+      logger.debug("✅ API Key loaded successfully (Free Tier Ready)");
+      logger.debug("🔑 Key starts with:", apiKey.substring(0, 10) + "...");
   } else {
-      console.warn("⚠️ API Key not found. Check .env.local file and restart dev server.");
-      console.warn("📝 Get FREE API key from: https://aistudio.google.com/app/apikey");
-      console.warn("💡 Add to .env.local: VITE_GEMINI_API_KEY=your-key-here");
+      logger.warn("⚠️ API Key not found. Check .env.local file and restart dev server.");
+      logger.info("📝 Get FREE API key from: https://aistudio.google.com/app/apikey");
+      logger.info("💡 Add to .env.local: VITE_GEMINI_API_KEY=your-key-here");
   }
 
   // FALLBACK PENTRU SARAKI (Fara API Key)
   if (!apiKey) {
-      console.warn("⚠️ Lipsă API KEY. Folosim răspunsuri 'din burtă' ca să meargă aplicația.");
+      logger.warn("⚠️ Lipsă API KEY. Folosim răspunsuri 'din burtă' ca să meargă aplicația.");
       
       // Simulam un delay ca sa para ca gandeste
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, AI_CONFIG.FALLBACK_DELAY_MS));
 
-      if (prompt.includes("roast (insultă fină)")) {
-          return "N-am buget de roast, dar arăți de parcă ai picat Bac-ul la desen. 🎨";
-      }
-      if (prompt.includes("Manager de Cabană")) {
-          return "Am notat pe o foaie invizibilă. Arunc-o la gunoi singur. 🚮";
-      }
-      if (prompt.includes("PROVOCARE")) {
-          return "Dansează Macarena pe silențios până observă cineva. 💃";
-      }
-      return "AI-ul e în grevă (Bagă API Key).";
+      return getFallbackResponse(prompt) || FALLBACK_RESPONSES.NO_API_KEY;
   }
 
   try {
@@ -61,18 +75,18 @@ export const askAI = async (prompt: string) => {
     // Try multiple models in order - starting with free tier models
     // Using correct model names that exist in Google AI Studio
     const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3.0-pro'];
-    let lastError: any = null;
+    let lastError: Error | null = null;
     
     for (const modelName of models) {
       try {
-        console.log(`🔄 Trying model: ${modelName}`);
+        logger.debug(`🔄 Trying model: ${modelName}`);
         const model = genAI.getGenerativeModel({ 
           model: modelName,
           safetySettings: safetyConfig,
           generationConfig: {
-            temperature: 1.8,
-            topP: 0.95,
-            topK: 40,
+            temperature: AI_CONFIG.TEMPERATURE,
+            topP: AI_CONFIG.TOP_P,
+            topK: AI_CONFIG.TOP_K,
             // NO LIMITS - Let AI respond freely
           }
         });
@@ -82,92 +96,61 @@ export const askAI = async (prompt: string) => {
         const text = response.text();
         
         if (text && text.trim()) {
-          console.log(`✅ Success with model: ${modelName}`);
+          logger.debug(`✅ Success with model: ${modelName}`);
           // Return raw response - no cleaning, no limits
           return text.trim();
         }
-      } catch (modelError: any) {
-        console.warn(`⚠️ Model ${modelName} failed:`, modelError?.message || modelError);
-        console.warn(`📋 Error details:`, {
-          code: modelError?.code,
-          status: modelError?.status,
-          statusText: modelError?.statusText
+      } catch (modelError: unknown) {
+        const error = modelError as { message?: string; code?: string; status?: number; statusText?: string };
+        logger.warn(`⚠️ Model ${modelName} failed:`, error?.message || modelError);
+        logger.debug(`📋 Error details:`, {
+          code: error?.code,
+          status: error?.status,
+          statusText: error?.statusText
         });
-        lastError = modelError;
+        lastError = modelError instanceof Error ? modelError : new Error(String(modelError));
         continue;
       }
     }
     
     throw lastError || new Error('All models failed');
     
-  } catch (e: any) {
-    console.error("❌ AI Error Details:", {
-      message: e?.message,
-      status: e?.status,
-      statusText: e?.statusText,
-      code: e?.code,
-      error: e
+  } catch (e: unknown) {
+    const error = e as { message?: string; status?: number; statusText?: string; code?: string };
+    logger.error("❌ AI Error Details:", {
+      message: error?.message,
+      status: error?.status,
+      statusText: error?.statusText,
+      code: error?.code,
     });
-    console.error("💡 Troubleshooting tips:");
-    console.error("   1. Check if API key is correct in .env.local (VITE_GEMINI_API_KEY)");
-    console.error("   2. Verify API key at: https://aistudio.google.com/app/apikey");
-    console.error("   3. Check if you've exceeded free tier quota (15 req/min, 1.5M tokens/day)");
-    console.error("   4. Restart dev server after changing .env.local");
-    
-    // Helper function for fallback
-    const getFallback = () => {
-      if (prompt.includes("roast (insultă fină)")) {
-        const roasts = [
-          "N-am buget de roast, dar arăți de parcă ai picat Bac-ul la desen. 🎨",
-          "Skibidi toilet ar fi mândru de tine. 🚽",
-          "6 7 vine garda să te ia pentru vibe-ul ăsta. 🚓",
-          "Tralalelo tralala, dar tu ești tralala fail. 🎵"
-        ];
-        return roasts[Math.floor(Math.random() * roasts.length)];
-      }
-      if (prompt.includes("Manager de Cabană")) {
-        const responses = [
-          "Am notat pe o foaie invizibilă. Arunc-o la gunoi singur. 🚮",
-          "Skibidi! Am notat, dar 6 7 vine garda să verifice. 🚽🚓",
-          "Tralalelo tralala, am notat tichetul tău. 🎵",
-          "Sigma rizz response: am notat, low key. 💀"
-        ];
-        return responses[Math.floor(Math.random() * responses.length)];
-      }
-      if (prompt.includes("PROVOCARE")) {
-        const dares = [
-          "Dansează Macarena pe silențios până observă cineva. 💃",
-          "Fă skibidi dance până observă cineva. 🚽",
-          "Strigă '6 7 VINE GARDA' cât mai tare. 🚓",
-          "Cântă 'tralalelo tralala' în fața tuturor. 🎵"
-        ];
-        return dares[Math.floor(Math.random() * dares.length)];
-      }
-      return "AI-ul e în grevă. Skibidi! 🚽";
-    };
+    logger.info("💡 Troubleshooting tips:");
+    logger.info("   1. Check if API key is correct in .env.local (VITE_GEMINI_API_KEY)");
+    logger.info("   2. Verify API key at: https://aistudio.google.com/app/apikey");
+    logger.info("   3. Check if you've exceeded free tier quota (15 req/min, 1.5M tokens/day)");
+    logger.info("   4. Restart dev server after changing .env.local");
     
     // Check error type
-    const errorMsg = (e?.message || '').toLowerCase();
-    const errorStr = JSON.stringify(e || {}).toLowerCase();
+    const errorMsg = (error?.message || '').toLowerCase();
+    const errorStr = JSON.stringify(error || {}).toLowerCase();
     
     if (errorMsg.includes('quota') || errorMsg.includes('exhausted') || errorMsg.includes('429') || errorStr.includes('quota')) {
-      console.warn("⚠️ API quota exceeded. Using fallback.");
-      return getFallback();
+      logger.warn("⚠️ API quota exceeded. Using fallback.");
+      return getFallbackResponse(prompt);
     }
     
     if (errorMsg.includes('api key') || errorMsg.includes('invalid') || errorMsg.includes('401') || errorMsg.includes('403') || errorMsg.includes('permission')) {
-      console.warn("⚠️ Invalid API key or permission denied. Using fallback.");
-      return getFallback();
+      logger.warn("⚠️ Invalid API key or permission denied. Using fallback.");
+      return getFallbackResponse(prompt);
     }
     
     if (errorMsg.includes('model') || errorMsg.includes('not found') || errorMsg.includes('404')) {
-      console.warn("⚠️ Model not found. Using fallback.");
-      return getFallback();
+      logger.warn("⚠️ Model not found. Using fallback.");
+      return getFallbackResponse(prompt);
     }
     
     // Generic fallback for any error
-    console.warn("⚠️ Unknown AI error. Using fallback.");
-    return getFallback();
+    logger.warn("⚠️ Unknown AI error. Using fallback.");
+    return getFallbackResponse(prompt);
   }
 };
 

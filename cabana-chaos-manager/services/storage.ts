@@ -1,18 +1,19 @@
 import { Quote, User, Vote, Complaint, CategoryId } from '../types';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { supabaseConfig, hasSupabaseConfig } from './supabaseConfig';
+import { logger } from '../utils/logger';
 
 // --- INITIALIZATION ---
-let supabase: any = null;
+let supabase: SupabaseClient | null = null;
 let isOfflineMode = true;
 let dbStatus: 'connecting' | 'connected' | 'error' | 'offline' = 'offline';
 
 // Initialize Supabase - much simpler than Firebase!
-const initSupabase = async () => {
+const initSupabase = async (): Promise<void> => {
     try {
         if (hasSupabaseConfig()) {
             dbStatus = 'connecting';
-            console.log("🔄 Initializare Supabase...");
+            logger.debug("🔄 Initializare Supabase...");
             
             supabase = createClient(supabaseConfig.url, supabaseConfig.anonKey);
             
@@ -24,21 +25,22 @@ const initSupabase = async () => {
                 }
                 isOfflineMode = false;
                 dbStatus = 'connected';
-                console.log("✅ Supabase conectat! Database ready.");
-            } catch (testError: any) {
-                console.warn("⚠️ Supabase connection test failed, but continuing:", testError.message);
+                logger.info("✅ Supabase conectat! Database ready.");
+            } catch (testError: unknown) {
+                const error = testError as { message?: string };
+                logger.warn("⚠️ Supabase connection test failed, but continuing:", error?.message || String(testError));
                 // Still try to use it - might just need tables created
                 isOfflineMode = false;
                 dbStatus = 'connected';
-                console.log("✅ Supabase initialized (tables may need to be created)");
+                logger.info("✅ Supabase initialized (tables may need to be created)");
             }
         } else {
-            console.warn("⚠️ Config Supabase gol. Trecem pe LocalStorage.");
+            logger.warn("⚠️ Config Supabase gol. Trecem pe LocalStorage.");
             dbStatus = 'offline';
         }
-    } catch (e: any) {
-        console.error("❌ Eroare Supabase:", e);
-        console.warn("🛡️ Activat scutul anti-crash. Rulez din LocalStorage.");
+    } catch (e: unknown) {
+        logger.error("❌ Eroare Supabase:", e);
+        logger.warn("🛡️ Activat scutul anti-crash. Rulez din LocalStorage.");
         supabase = null;
         isOfflineMode = true;
         dbStatus = 'error';
@@ -100,8 +102,8 @@ export const storage = {
             .from('users')
             .insert({ name, joined_at: new Date().toISOString() });
         }
-      } catch (e: any) {
-        console.error("Cloud login fail, fallback local", e);
+      } catch (e: unknown) {
+        logger.warn("Cloud login fail, fallback local", e);
         // Fallback to local
         const users = localData.users();
         if (!users.includes(name)) {
@@ -135,9 +137,9 @@ export const storage = {
           .from('users')
           .select('name')
           .order('joined_at', { ascending: true })
-          .then(({ data, error }: any) => {
+          .then(({ data, error }: { data: { name: string }[] | null; error: unknown }) => {
             if (!error && data) {
-              callback(data.map((u: any) => u.name));
+              callback(data.map((u) => u.name));
             } else {
               callback(localData.users());
             }
@@ -153,8 +155,8 @@ export const storage = {
                 .from('users')
                 .select('name')
                 .order('joined_at', { ascending: true })
-                .then(({ data }: any) => {
-                  if (data) callback(data.map((u: any) => u.name));
+                .then(({ data }: { data: { name: string }[] | null }) => {
+                  if (data) callback(data.map((u) => u.name));
                 });
             }
           )
@@ -176,17 +178,25 @@ export const storage = {
   },
 
   subscribeToVotes: (callback: (votes: Vote[]) => void) => {
-    // Always load from localStorage first
-    callback(localData.votes());
+    // Always load from localStorage first - INSTANT
+    const initialVotes = localData.votes();
+    callback(initialVotes);
     
     if (supabase && !isOfflineMode) {
       try {
-        // Load from Supabase
-        supabase
-          .from('votes')
-          .select('*')
-          .then(({ data, error }: any) => {
-            if (!error && data) {
+        // Load from Supabase IMMEDIATELY (no delay) - async fire and forget
+        (async () => {
+          try {
+            const { data, error } = await supabase
+              .from('votes')
+              .select('*');
+            
+            if (error) {
+              logger.warn("Supabase votes error:", error);
+              return;
+            }
+            
+            if (data) {
               // Merge with localStorage (local takes priority for immediate updates)
               const localVotes = localData.votes();
               const allVotes = [...data, ...localVotes];
@@ -194,44 +204,88 @@ export const storage = {
               const uniqueVotes = Array.from(
                 new Map(allVotes.map(v => [`${v.voter}-${v.category}`, v])).values()
               );
+              
+              // Update localStorage with merged data so it persists
+              localStorage.setItem(KEYS.VOTES, JSON.stringify(uniqueVotes));
+              
               callback(uniqueVotes);
-            } else {
-              console.warn("Supabase votes error:", error);
-              // Keep using localStorage
             }
-          });
+          } catch (err) {
+            logger.warn("Supabase votes error:", err);
+            // Keep using localStorage
+          }
+        })();
 
-        // Real-time subscription
+        // Real-time subscription - use event data directly (FAST!)
         const channel = supabase
           .channel('votes-changes')
           .on('postgres_changes',
             { event: '*', schema: 'public', table: 'votes' },
-            () => {
-              supabase
-                .from('votes')
-                .select('*')
-                .then(({ data, error }: any) => {
-                  if (!error && data) {
-                    // Merge with localStorage
-                    const localVotes = localData.votes();
-                    const allVotes = [...data, ...localVotes];
-                    const uniqueVotes = Array.from(
-                      new Map(allVotes.map(v => [`${v.voter}-${v.category}`, v])).values()
-                    );
-                    callback(uniqueVotes);
-                  }
-                });
+            async () => {
+              // Get fresh data from Supabase but FAST
+              try {
+                const { data, error } = await supabase
+                  .from('votes')
+                  .select('*');
+                
+                if (!error && data) {
+                  // Merge with localStorage
+                  const localVotes = localData.votes();
+                  const allVotes = [...data, ...localVotes];
+                  const uniqueVotes = Array.from(
+                    new Map(allVotes.map(v => [`${v.voter}-${v.category}`, v])).values()
+                  );
+                  
+                  // Update localStorage with merged data
+                  localStorage.setItem(KEYS.VOTES, JSON.stringify(uniqueVotes));
+                  
+                  callback(uniqueVotes);
+                }
+              } catch (err) {
+                logger.error("Real-time update error:", err);
+              }
             }
           )
           .subscribe();
 
+        // Also listen to localStorage updates for immediate feedback
+        const storageHandler = () => {
+          const localVotes = localData.votes();
+          // Update IMMEDIATELY with localStorage data (no waiting for Supabase)
+          callback(localVotes);
+          
+          // Then merge with Supabase in background (async, non-blocking)
+          supabase
+            .from('votes')
+            .select('*')
+            .then(({ data, error }: { data: Vote[] | null; error: unknown }) => {
+              if (!error && data) {
+                const allVotes = [...data, ...localVotes];
+                const uniqueVotes = Array.from(
+                  new Map(allVotes.map(v => [`${v.voter}-${v.category}`, v])).values()
+                );
+                // Update again with merged data
+                callback(uniqueVotes);
+                // Also update localStorage with merged data
+                localStorage.setItem(KEYS.VOTES, JSON.stringify(uniqueVotes));
+              }
+            })
+            .catch(() => {
+              // If Supabase fails, keep using localStorage (already updated above)
+            });
+        };
+        window.addEventListener('storage-update', storageHandler);
+
         return () => {
           supabase.removeChannel(channel);
+          window.removeEventListener('storage-update', storageHandler);
         };
       } catch(e) {
-        console.error("Votes subscription error:", e);
+        logger.error("Votes subscription error:", e);
         // Keep using localStorage
-        return () => {};
+        const handler = () => callback(localData.votes());
+        window.addEventListener('storage-update', handler);
+        return () => window.removeEventListener('storage-update', handler);
       }
     } else {
       // LocalStorage only - listen for updates
@@ -242,20 +296,27 @@ export const storage = {
   },
 
   subscribeToQuotes: (callback: (quotes: Quote[]) => void) => {
-    // Always load from localStorage first
+    // Always load from localStorage first - INSTANT
     callback(localData.quotes());
     
     if (supabase && !isOfflineMode) {
       try {
-        // Load from Supabase
-        supabase
-          .from('quotes')
-          .select('*')
-          .order('timestamp', { ascending: false })
-          .then(({ data, error }: any) => {
-            if (!error && data) {
+        // Load from Supabase IMMEDIATELY (no delay) - async fire and forget
+        (async () => {
+          try {
+            const { data, error } = await supabase
+              .from('quotes')
+              .select('*')
+              .order('timestamp', { ascending: false });
+            
+            if (error) {
+              logger.warn("Supabase quotes error:", error);
+              return;
+            }
+            
+            if (data) {
               // Map Supabase data to Quote interface
-              const mappedQuotes: Quote[] = data.map((q: any) => ({
+              const mappedQuotes: Quote[] = data.map((q: { id?: string | number; text: string; author: string; added_by?: string; addedBy?: string; timestamp?: number }) => ({
                 id: q.id?.toString() || Date.now().toString(),
                 text: q.text,
                 author: q.author,
@@ -270,34 +331,38 @@ export const storage = {
                 new Map(allQuotes.map(q => [q.id, q])).values()
               );
               callback(uniqueQuotes.sort((a, b) => b.timestamp - a.timestamp));
-            } else {
-              console.warn("Supabase quotes error:", error);
-              // Keep using localStorage
             }
-          });
+          } catch (err) {
+            logger.warn("Supabase quotes error:", err);
+            // Keep using localStorage
+          }
+        })();
 
-        // Real-time subscription
+        // Real-time subscription - use async/await for faster updates
         const channel = supabase
           .channel('quotes-changes')
           .on('postgres_changes',
             { event: '*', schema: 'public', table: 'quotes' },
-            () => {
-              supabase
-                .from('quotes')
-                .select('*')
-                .order('timestamp', { ascending: false })
-                .then(({ data, error }: any) => {
-                  if (!error && data) {
-                    const mappedQuotes: Quote[] = data.map((q: any) => ({
-                      id: q.id?.toString() || Date.now().toString(),
-                      text: q.text,
-                      author: q.author,
-                      addedBy: q.added_by || q.addedBy || 'Unknown',
-                      timestamp: q.timestamp || Date.now()
-                    }));
-                    callback(mappedQuotes.sort((a, b) => b.timestamp - a.timestamp));
-                  }
-                });
+            async () => {
+              try {
+                const { data, error } = await supabase
+                  .from('quotes')
+                  .select('*')
+                  .order('timestamp', { ascending: false });
+                
+                if (!error && data) {
+                  const mappedQuotes: Quote[] = data.map((q: { id?: string | number; text: string; author: string; added_by?: string; addedBy?: string; timestamp?: number }) => ({
+                    id: q.id?.toString() || Date.now().toString(),
+                    text: q.text,
+                    author: q.author,
+                    addedBy: q.added_by || q.addedBy || 'Unknown',
+                    timestamp: q.timestamp || Date.now()
+                  }));
+                  callback(mappedQuotes.sort((a, b) => b.timestamp - a.timestamp));
+                }
+              } catch (err) {
+                logger.error("Real-time quotes update error:", err);
+              }
             }
           )
           .subscribe();
@@ -310,9 +375,9 @@ export const storage = {
             .from('quotes')
             .select('*')
             .order('timestamp', { ascending: false })
-            .then(({ data, error }: any) => {
+            .then(({ data, error }: { data: { id?: string | number; text: string; author: string; added_by?: string; addedBy?: string; timestamp?: number }[] | null; error: unknown }) => {
               if (!error && data) {
-                const mappedQuotes: Quote[] = data.map((q: any) => ({
+                const mappedQuotes: Quote[] = data.map((q) => ({
                   id: q.id?.toString() || Date.now().toString(),
                   text: q.text,
                   author: q.author,
@@ -337,7 +402,7 @@ export const storage = {
           window.removeEventListener('storage-update', storageHandler);
         };
       } catch(e) {
-        console.error("Quotes subscription error:", e);
+        logger.error("Quotes subscription error:", e);
         // Keep using localStorage
         const handler = () => callback(localData.quotes());
         window.addEventListener('storage-update', handler);
@@ -376,13 +441,13 @@ export const storage = {
           });
         
         if (error) {
-          console.error("Cloud vote failed:", error);
+          logger.warn("Cloud vote failed:", error);
           // Keep in localStorage even if cloud fails
         } else {
-          console.log("✅ Vote saved to Supabase:", data);
+          logger.debug("✅ Vote saved to Supabase:", data);
         }
       } catch (e) {
-        console.error("Cloud vote error:", e);
+        logger.error("Cloud vote error:", e);
         // Keep in localStorage even if cloud fails
       }
     }
@@ -405,13 +470,13 @@ export const storage = {
           .eq('category', category);
         
         if (error) {
-          console.error("Cloud vote removal failed:", error);
+          logger.warn("Cloud vote removal failed:", error);
           // Keep removed from localStorage even if cloud fails
         } else {
-          console.log("✅ Vote removed from Supabase");
+          logger.debug("✅ Vote removed from Supabase");
         }
       } catch (e) {
-        console.error("Cloud vote removal error:", e);
+        logger.error("Cloud vote removal error:", e);
         // Keep removed from localStorage even if cloud fails
       }
     }
@@ -439,33 +504,40 @@ export const storage = {
           });
         
         if (error) {
-          console.error("Cloud quote failed:", error);
+          logger.warn("Cloud quote failed:", error);
           // Don't remove from localStorage, keep it there
         } else {
-          console.log("✅ Quote saved to Supabase:", data);
+          logger.debug("✅ Quote saved to Supabase:", data);
         }
       } catch (e) {
-        console.error("Cloud quote error:", e);
+        logger.error("Cloud quote error:", e);
         // Keep in localStorage even if cloud fails
       }
     }
   },
 
   subscribeToComplaints: (callback: (complaints: Complaint[]) => void) => {
-    // Always load from localStorage first
+    // Always load from localStorage first - INSTANT
     callback(localData.complaints());
     
     if (supabase && !isOfflineMode) {
       try {
-        // Load from Supabase
-        supabase
-          .from('complaints')
-          .select('*')
-          .order('timestamp', { ascending: false })
-          .then(({ data, error }: any) => {
-            if (!error && data) {
+        // Load from Supabase IMMEDIATELY (no delay) - async fire and forget
+        (async () => {
+          try {
+            const { data, error } = await supabase
+              .from('complaints')
+              .select('*')
+              .order('timestamp', { ascending: false });
+            
+            if (error) {
+              logger.warn("Supabase complaints error:", error);
+              return;
+            }
+            
+            if (data) {
               // Map Supabase data to Complaint interface
-              const mappedComplaints: Complaint[] = data.map((c: any) => ({
+              const mappedComplaints: Complaint[] = data.map((c: { id?: string | number; text: string; ai_reply?: string; aiReply?: string; timestamp?: number }) => ({
                 id: c.id?.toString() || Date.now().toString(),
                 text: c.text,
                 aiReply: c.ai_reply || c.aiReply || '',
@@ -479,33 +551,37 @@ export const storage = {
                 new Map(allComplaints.map(c => [c.id, c])).values()
               );
               callback(uniqueComplaints.sort((a, b) => b.timestamp - a.timestamp));
-            } else {
-              console.warn("Supabase complaints error:", error);
-              // Keep using localStorage
             }
-          });
+          } catch (err) {
+            logger.warn("Supabase complaints error:", err);
+            // Keep using localStorage
+          }
+        })();
 
-        // Real-time subscription
+        // Real-time subscription - use async/await for faster updates
         const channel = supabase
           .channel('complaints-changes')
           .on('postgres_changes',
             { event: '*', schema: 'public', table: 'complaints' },
-            () => {
-              supabase
-                .from('complaints')
-                .select('*')
-                .order('timestamp', { ascending: false })
-                .then(({ data, error }: any) => {
-                  if (!error && data) {
-                    const mappedComplaints: Complaint[] = data.map((c: any) => ({
-                      id: c.id?.toString() || Date.now().toString(),
-                      text: c.text,
-                      aiReply: c.ai_reply || c.aiReply || '',
-                      timestamp: c.timestamp || Date.now()
-                    }));
-                    callback(mappedComplaints.sort((a, b) => b.timestamp - a.timestamp));
-                  }
-                });
+            async () => {
+              try {
+                const { data, error } = await supabase
+                  .from('complaints')
+                  .select('*')
+                  .order('timestamp', { ascending: false });
+                
+                if (!error && data) {
+                  const mappedComplaints: Complaint[] = data.map((c: { id?: string | number; text: string; ai_reply?: string; aiReply?: string; timestamp?: number }) => ({
+                    id: c.id?.toString() || Date.now().toString(),
+                    text: c.text,
+                    aiReply: c.ai_reply || c.aiReply || '',
+                    timestamp: c.timestamp || Date.now()
+                  }));
+                  callback(mappedComplaints.sort((a, b) => b.timestamp - a.timestamp));
+                }
+              } catch (err) {
+                logger.error("Real-time complaints update error:", err);
+              }
             }
           )
           .subscribe();
@@ -518,9 +594,9 @@ export const storage = {
             .from('complaints')
             .select('*')
             .order('timestamp', { ascending: false })
-            .then(({ data, error }: any) => {
+            .then(({ data, error }: { data: { id?: string | number; text: string; ai_reply?: string; aiReply?: string; timestamp?: number }[] | null; error: unknown }) => {
               if (!error && data) {
-                const mappedComplaints: Complaint[] = data.map((c: any) => ({
+                const mappedComplaints: Complaint[] = data.map((c) => ({
                   id: c.id?.toString() || Date.now().toString(),
                   text: c.text,
                   aiReply: c.ai_reply || c.aiReply || '',
@@ -544,7 +620,7 @@ export const storage = {
           window.removeEventListener('storage-update', storageHandler);
         };
       } catch(e) {
-        console.error("Complaints subscription error:", e);
+        logger.error("Complaints subscription error:", e);
         // Keep using localStorage
         const handler = () => callback(localData.complaints());
         window.addEventListener('storage-update', handler);
@@ -579,13 +655,13 @@ export const storage = {
           });
         
         if (error) {
-          console.error("Cloud complaint failed:", error);
+          logger.warn("Cloud complaint failed:", error);
           // Don't remove from localStorage, keep it there
         } else {
-          console.log("✅ Complaint saved to Supabase:", data);
+          logger.debug("✅ Complaint saved to Supabase:", data);
         }
       } catch (e) {
-        console.error("Cloud complaint error:", e);
+        logger.error("Cloud complaint error:", e);
         // Keep in localStorage even if cloud fails
       }
     }

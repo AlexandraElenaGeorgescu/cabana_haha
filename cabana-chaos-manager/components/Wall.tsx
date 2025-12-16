@@ -15,17 +15,17 @@ export const Wall: React.FC<Props> = ({ currentUser }) => {
   const [isPosting, setIsPosting] = useState(false);
 
   useEffect(() => {
-    console.log("🔔 Wall: Setting up subscriptions");
+    logger.debug("🔔 Wall: Setting up subscriptions");
     const unsubQuotes = storage.subscribeToQuotes((q) => {
-      console.log("📋 Wall: Quotes updated, count:", q.length);
+      logger.debug("📋 Wall: Quotes updated, count:", q.length);
       setQuotes(q);
     });
     const unsubUsers = storage.subscribeToUsers((u) => {
-      console.log("👥 Wall: Users updated, count:", u.length);
+      logger.debug("👥 Wall: Users updated, count:", u.length);
       setUsers(u);
     });
     return () => {
-        console.log("🔕 Wall: Cleaning up subscriptions");
+        logger.debug("🔕 Wall: Cleaning up subscriptions");
         unsubQuotes();
         unsubUsers();
     };
@@ -34,7 +34,7 @@ export const Wall: React.FC<Props> = ({ currentUser }) => {
   const handlePost = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newQuote || !author) {
-      console.warn("⚠️ Cannot post: missing quote or author");
+      logger.warn("⚠️ Cannot post: missing quote or author");
       alert("⚠️ Completează toate câmpurile, fra! (Skibidi edition)");
       return;
     }
@@ -48,19 +48,16 @@ export const Wall: React.FC<Props> = ({ currentUser }) => {
       timestamp: Date.now()
     };
 
-    console.log("📝 Adding quote:", q);
+    logger.debug("📝 Adding quote:", q);
     try {
       await storage.addQuote(q);
-      console.log("✅ Quote added successfully");
+      logger.debug("✅ Quote added successfully");
       setNewQuote('');
       setAuthor('');
-      // Force update by re-reading from storage
-      setTimeout(() => {
-        const updatedQuotes = storage.subscribeToQuotes((q) => setQuotes(q));
-        // The subscription will update automatically, but we trigger it manually too
-      }, 100);
+      // Note: The subscription will update automatically via useEffect
+      // No need to manually trigger - the subscription callback will fire
     } catch (error) {
-      console.error("❌ Error adding quote:", error);
+      logger.error("❌ Error adding quote:", error);
       alert("❌ Eroare la salvare! Verifică consola pentru detalii. (6 7 vine garda să investigheze)");
     } finally {
       setIsPosting(false);
@@ -104,6 +101,7 @@ export const Wall: React.FC<Props> = ({ currentUser }) => {
                     value={author}
                     onChange={e => setAuthor(e.target.value)}
                     className="p-4 border-4 border-black font-bold text-xl bg-white text-black focus:bg-yellow-200 outline-none shadow-[6px_6px_0px_0px_black] focus:shadow-[2px_2px_0px_0px_black] focus:translate-x-1 focus:translate-y-1 transition-all appearance-none rounded-none"
+                    aria-label="Select who said the quote"
                  >
                     <option value="">-- Alege făptașul --</option>
                     {users.map(u => (
@@ -129,6 +127,7 @@ export const Wall: React.FC<Props> = ({ currentUser }) => {
                 onChange={e => setNewQuote(e.target.value)}
                 placeholder="Yakka na, ce a scos pe gură? Zi-le pe alea grele... (Skibidi, 6 7, tralalelo, etc.)"
                 className="p-4 border-4 border-black font-bold h-32 text-xl bg-white text-black focus:bg-pink-100 placeholder-gray-500 outline-none resize-none shadow-[6px_6px_0px_0px_black] focus:shadow-[2px_2px_0px_0px_black] focus:translate-x-1 focus:translate-y-1 transition-all"
+                aria-label="Enter the quote text"
             />
           </div>
           <BrutalButton 

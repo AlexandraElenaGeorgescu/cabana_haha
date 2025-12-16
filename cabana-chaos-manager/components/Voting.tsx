@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { CATEGORIES, CategoryId, Vote } from '../types';
 import { storage } from '../services/storage';
 import { BrutalButton } from './BrutalButton';
+import { UI_CONFIG } from '../constants';
+import { logger } from '../utils/logger';
 
 interface Props {
   currentUser: string;
@@ -13,6 +15,7 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
   const [users, setUsers] = useState<string[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
   const [explosion, setExplosion] = useState(false);
+  const [isChangingVote, setIsChangingVote] = useState(false);
 
   useEffect(() => {
     const unsubUsers = storage.subscribeToUsers((u) => setUsers(u));
@@ -21,7 +24,13 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
         unsubUsers();
         unsubVotes();
     };
-  }, []);
+  }, [currentUser]); // Re-subscribe when user changes
+
+  // Reset changing vote state when category changes
+  useEffect(() => {
+    setIsChangingVote(false);
+    setSelectedUser('');
+  }, [activeCategory]);
 
   const handleVote = async () => {
     if (!selectedUser) {
@@ -35,12 +44,29 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
       category: activeCategory
     };
 
-    await storage.addVote(newVote);
-    setSelectedUser('');
-    
-    // TRASH EXPLOSION FX
-    setExplosion(true);
-    setTimeout(() => setExplosion(false), 1000);
+    try {
+      // Update local state immediately for instant UI feedback
+      const updatedVotes = votes.filter(v => !(v.voter === currentUser && v.category === activeCategory));
+      updatedVotes.push(newVote);
+      setVotes(updatedVotes);
+      setSelectedUser('');
+      setIsChangingVote(false);
+      
+      // Then save to storage (async, non-blocking)
+      storage.addVote(newVote).catch((error) => {
+        logger.error("Error adding vote:", error);
+        // Revert on error
+        setVotes(votes);
+        alert("Eroare la salvare vot! Încearcă din nou.");
+      });
+      
+      // TRASH EXPLOSION FX
+      setExplosion(true);
+      setTimeout(() => setExplosion(false), UI_CONFIG.EXPLOSION_DURATION_MS);
+    } catch (error) {
+      logger.error("Error adding vote:", error);
+      alert("Eroare la salvare vot! Încearcă din nou.");
+    }
   };
 
   const getResults = (catId: CategoryId) => {
@@ -60,11 +86,28 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
   };
 
   const handleRemoveVote = async () => {
-    await storage.removeVote(currentUser, activeCategory);
-    setSelectedUser('');
-    // TRASH EXPLOSION FX
-    setExplosion(true);
-    setTimeout(() => setExplosion(false), 1000);
+    try {
+      // Update local state immediately for instant UI feedback
+      const updatedVotes = votes.filter(v => !(v.voter === currentUser && v.category === activeCategory));
+      setVotes(updatedVotes);
+      setSelectedUser('');
+      setIsChangingVote(false);
+      
+      // Then remove from storage (async, non-blocking)
+      storage.removeVote(currentUser, activeCategory).catch((error) => {
+        logger.error("Error removing vote:", error);
+        // Revert on error
+        setVotes(votes);
+        alert("Eroare la ștergere vot! Încearcă din nou.");
+      });
+      
+      // TRASH EXPLOSION FX
+      setExplosion(true);
+      setTimeout(() => setExplosion(false), UI_CONFIG.EXPLOSION_DURATION_MS);
+    } catch (error) {
+      logger.error("Error removing vote:", error);
+      alert("Eroare la ștergere vot! Încearcă din nou.");
+    }
   };
 
   const activeCatData = CATEGORIES.find(c => c.id === activeCategory)!;
@@ -111,7 +154,7 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
           <div className="absolute -top-6 left-3 bg-black text-lime-400 font-black text-2xl px-4 py-1.5 border-2 border-white transform -rotate-2 animate-pulse shadow-[3px_3px_0px_0px_lime]">
               NASUL SAU PULA? 🎰
           </div>
-          {currentVote ? (
+          {currentVote && !isChangingVote ? (
             <div className="mt-4 p-4 bg-yellow-300 border-4 border-black shadow-[4px_4px_0px_0px_black]">
               <p className="font-black text-lg text-black mb-3">
                 💀 AI VOTAT DEJA PE: <span className="text-red-600 uppercase">{currentVote.candidate}</span>
@@ -125,7 +168,8 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
                 </BrutalButton>
                 <BrutalButton 
                   onClick={() => {
-                    setSelectedUser(currentVote.candidate);
+                    setIsChangingVote(true);
+                    setSelectedUser('');
                     // Scroll to select
                     setTimeout(() => {
                       const select = document.querySelector('select');
@@ -140,10 +184,16 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
             </div>
           ) : (
             <div className="mt-4 flex gap-3 flex-col sm:flex-row">
+              {isChangingVote && (
+                <p className="w-full text-center font-black text-sm text-black bg-yellow-200 p-2 border-2 border-black mb-2">
+                  🔄 Schimbă votul pentru {activeCategory}
+                </p>
+              )}
               <select 
                 value={selectedUser}
                 onChange={(e) => setSelectedUser(e.target.value)}
                 className="flex-1 p-3 border-2 border-black bg-white text-black font-black text-lg focus:outline-none focus:bg-lime-300 focus:text-black focus:ring-2 ring-black shadow-[3px_3px_0px_0px_black] cursor-pointer"
+                aria-label="Select candidate to vote for"
               >
                 <option value="" className="bg-white text-black">-- CINE ȘI-O IA? --</option>
                 {users.map(u => (
@@ -151,8 +201,19 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
                 ))}
               </select>
               <BrutalButton onClick={handleVote} className="bg-red-600 text-white hover:bg-red-500 border-black text-lg shadow-[4px_4px_0px_0px_white] hover:shadow-[3px_3px_0px_0px_black] hover:scale-105">
-                DĂ-I FRATE 💣
+                {isChangingVote ? 'SCHIMBĂ VOTUL 🔄' : 'DĂ-I FRATE 💣'}
               </BrutalButton>
+              {isChangingVote && (
+                <BrutalButton 
+                  onClick={() => {
+                    setIsChangingVote(false);
+                    setSelectedUser('');
+                  }}
+                  className="bg-gray-600 text-white hover:bg-gray-500 border-black text-lg shadow-[4px_4px_0px_0px_white] hover:shadow-[3px_3px_0px_0px_black] hover:scale-105"
+                >
+                  ANULEAZĂ ❌
+                </BrutalButton>
+              )}
             </div>
           )}
           

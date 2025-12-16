@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BrutalButton } from './BrutalButton';
 import { storage } from '../services/storage';
 import { askAI, prompts } from '../services/ai';
 import { hasSupabaseConfig } from '../services/supabaseConfig';
+import { logger } from '../utils/logger';
 
 interface Props {
   onLogin: (name: string) => void;
@@ -23,16 +24,25 @@ export const Login: React.FC<Props> = ({ onLogin }) => {
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [mode]);
 
-  const handleNameBlur = async () => {
+  const handleNameBlur = useCallback(async () => {
     if (name.length > 2 && !roast) {
         setLoadingRoast(true);
-        const aiResponse = await askAI(prompts.roastUser(name));
-        setRoast(aiResponse);
-        setLoadingRoast(false);
+        try {
+          const aiResponse = await askAI(prompts.roastUser(name));
+          setRoast(aiResponse);
+        } catch (error) {
+          logger.error("Error getting AI roast:", error);
+          setRoast("Eroare la încărcarea roast-ului. Încearcă din nou!");
+        } finally {
+          setLoadingRoast(false);
+        }
     }
-  }
+  }, [name, roast]);
+
+  // Debounced version for onChange - only trigger on blur, not onChange
+  // onChange will just update the name state, blur will trigger AI call
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,6 +113,7 @@ export const Login: React.FC<Props> = ({ onLogin }) => {
                 placeholder="Ex: Regele la Bere 🍺 (sau Skibidi Sigma 🚽)"
                 className="p-3 text-lg border-2 border-black font-black focus:outline-none focus:bg-pink-300 bg-white text-black placeholder-gray-500 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:rotate-1 transition-all focus:scale-105"
                 autoFocus
+                aria-label="Enter your name"
               />
               {loadingRoast && <div className="text-xs font-bold animate-pulse">Se încarcă insulta...</div>}
               {roast && (

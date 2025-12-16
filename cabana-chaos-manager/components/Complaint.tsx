@@ -3,6 +3,7 @@ import { BrutalButton } from './BrutalButton';
 import { askAI, prompts } from '../services/ai';
 import { storage } from '../services/storage';
 import { Complaint as ComplaintType } from '../types';
+import { logger } from '../utils/logger';
 
 export const Complaint: React.FC = () => {
   const [feedback, setFeedback] = useState('');
@@ -16,7 +17,7 @@ export const Complaint: React.FC = () => {
 
   useEffect(() => {
     const unsubscribe = storage.subscribeToComplaints((c) => {
-      console.log("📋 Complaints updated, count:", c.length);
+      logger.debug("📋 Complaints updated, count:", c.length);
       setComplaints(c);
     });
     return () => unsubscribe();
@@ -63,12 +64,13 @@ export const Complaint: React.FC = () => {
       timestamp: Date.now()
     };
     
-    console.log("📝 Saving complaint (anonymous):", complaint);
+    logger.debug("📝 Saving complaint (anonymous):", complaint);
     try {
       await storage.addComplaint(complaint);
-      console.log("✅ Complaint saved successfully");
+      logger.debug("✅ Complaint saved successfully");
     } catch (error) {
-      console.error("❌ Error saving complaint:", error);
+      logger.error("❌ Error saving complaint:", error);
+      alert("Eroare la salvare reclamație! Încearcă din nou.");
     }
     
     setAiReply(reply);
@@ -111,6 +113,7 @@ export const Complaint: React.FC = () => {
                   onChange={e => setFeedback(e.target.value)}
                   className="w-full h-24 p-3 border-3 border-black font-mono text-base bg-white text-black focus:bg-lime-200 focus:ring-3 ring-black outline-none shadow-[4px_4px_0px_0px_black] mt-2 placeholder-gray-500 font-bold"
                   placeholder="Scrie romanul aici, coach... (6 7, skibidi, tralalelo, etc.)"
+                  aria-label="Enter your complaint"
                 />
               </div>
 

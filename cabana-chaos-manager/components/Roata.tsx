@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrutalButton } from './BrutalButton';
 import { askAI, prompts } from '../services/ai';
 
@@ -27,6 +27,20 @@ export const Roata: React.FC = () => {
   const [result, setResult] = useState<string | null>(null);
   const [spinning, setSpinning] = useState(false);
   const [loadingText, setLoadingText] = useState("Se încarcă nebunia...");
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   const spin = async () => {
     setSpinning(true);
@@ -47,26 +61,41 @@ export const Roata: React.FC = () => {
     ];
     
     let step = 0;
-    const interval = setInterval(() => {
+    intervalRef.current = setInterval(() => {
         setLoadingText(loaders[step % loaders.length]);
         step++;
     }, 500);
 
-    // Call AI with UNLOCKED safety settings
-    const aiResult = await askAI(prompts.pacaneleDare());
-    
-    clearInterval(interval);
-    
-    setTimeout(() => {
+    try {
+      // Call AI with UNLOCKED safety settings
+      const aiResult = await askAI(prompts.pacaneleDare());
+      
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      
+      timeoutRef.current = setTimeout(() => {
         setSpinning(false);
         if (aiResult) {
-            setResult(aiResult);
+          setResult(aiResult);
         } else {
-            // Fallback to static
-            const randomDare = STATIC_DARES[Math.floor(Math.random() * STATIC_DARES.length)];
-            setResult(randomDare + " (AI-ul e mort, asta e de la noi)");
+          // Fallback to static
+          const randomDare = STATIC_DARES[Math.floor(Math.random() * STATIC_DARES.length)];
+          setResult(randomDare + " (AI-ul e mort, asta e de la noi)");
         }
-    }, 500);
+        timeoutRef.current = null;
+      }, 500);
+    } catch (error) {
+      // Clean up on error
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      setSpinning(false);
+      const randomDare = STATIC_DARES[Math.floor(Math.random() * STATIC_DARES.length)];
+      setResult(randomDare + " (Eroare AI, asta e de la noi)");
+    }
   };
 
   return (
