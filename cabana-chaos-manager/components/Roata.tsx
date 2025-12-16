@@ -89,10 +89,10 @@ export const Roata: React.FC = () => {
                    </div>
                </div>
              ) : result ? (
-                <div className="relative group">
+                <div className="relative group w-full">
                     <div className="absolute -inset-2 bg-gradient-to-r from-pink-600 to-purple-600 blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-tilt"></div>
-                    <div className="relative bg-white border-4 border-black p-4 rotate-1 animate-bounce shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-                       <p className="text-xl md:text-3xl font-black uppercase text-black leading-tight">
+                    <div className="relative bg-white border-4 border-black p-4 md:p-6 rotate-1 animate-bounce shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                       <p className="text-lg md:text-2xl lg:text-3xl font-black uppercase text-black leading-relaxed break-words whitespace-pre-wrap">
                            {result}
                        </p>
                     </div>

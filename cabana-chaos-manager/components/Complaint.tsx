@@ -90,7 +90,7 @@ export const Complaint: React.FC = () => {
 
         {aiReply && (
             <div className="mb-6 p-4 bg-yellow-300 border-4 border-black rotate-1 animate-bounce">
-                <p className="text-xl font-mono text-black font-black mt-2 bg-white p-3 border-2 border-black">{aiReply}</p>
+                <p className="text-lg md:text-xl font-mono text-black font-black mt-2 bg-white p-4 border-2 border-black break-words whitespace-pre-wrap">{aiReply}</p>
                 <BrutalButton onClick={() => setAiReply(null)} className="mt-4 text-sm py-2 bg-black text-white border-2 border-white">AM ÎNȚELES, SUNT PROST</BrutalButton>
             </div>
         )}
@@ -175,7 +175,7 @@ export const Complaint: React.FC = () => {
                   {complaint.aiReply && (
                     <div className="mt-3 pt-3 border-t-2 border-black">
                       <p className="text-xs font-bold text-gray-600 mb-1">📢 RĂSPUNS MANAGER:</p>
-                      <p className="text-sm font-mono text-black bg-lime-200 p-2 border-2 border-black">
+                      <p className="text-sm md:text-base font-mono text-black bg-lime-200 p-3 border-2 border-black break-words whitespace-pre-wrap">
                         {complaint.aiReply}
                       </p>
                     </div>

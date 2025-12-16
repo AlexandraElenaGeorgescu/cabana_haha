@@ -23,7 +23,7 @@ const getApiKey = (): string => {
   }
 };
 
-export const askAI = async (prompt: string, maxTokens = 250) => {
+export const askAI = async (prompt: string) => {
   const apiKey = getApiKey();
   
   // Debug log to help troubleshoot
@@ -70,10 +70,10 @@ export const askAI = async (prompt: string, maxTokens = 250) => {
           model: modelName,
           safetySettings: safetyConfig,
           generationConfig: {
-            temperature: 1.6,
+            temperature: 1.8,
             topP: 0.95,
             topK: 40,
-            maxOutputTokens: maxTokens,
+            // NO LIMITS - Let AI respond freely
           }
         });
         
@@ -83,6 +83,7 @@ export const askAI = async (prompt: string, maxTokens = 250) => {
         
         if (text && text.trim()) {
           console.log(`✅ Success with model: ${modelName}`);
+          // Return raw response - no cleaning, no limits
           return text.trim();
         }
       } catch (modelError: any) {
@@ -174,16 +175,13 @@ export const prompts = {
   roastUser: (name: string) => `
     Ești "Ceață", un Gen Z arogant cu TikTok brainrot care judecă oamenii după nume.
     Tocmai a intrat unul pe nume "${name}".
-    Dă-i un roast (insultă fină) scurtă cu referințe la skibidi, "6 7 vine garda", tralalelo tralala, sau alte meme-uri TikTok.
+    Dă-i un roast (insultă fină) cu referințe la skibidi, "6 7 vine garda", tralalelo tralala, sau alte meme-uri TikTok.
     
-    REGULI STRICTE:
-    1. Folosește "rom-gleză" (mix română-engleză), slang de cartier, sau referințe la skibidi toilet, "6 7 vine garda", tralalelo.
-    2. Fii amuzant, nu doar răutăcios. Brainrot energy.
-    3. MAXIM 80 CARACTERE (inclusiv spații și emoji-uri). RESPECTĂ ACEASTĂ LIMITĂ - nu depăși sub nicio formă.
-    4. Poți folosi: "skibidi", "6 7", "tralalelo tralala", "sigma", "rizz", "gyatt", "fanum tax", etc.
-    5. IMPORTANT: Răspunsul tău trebuie să fie EXACT sub 80 de caractere. Verifică înainte să răspunzi.
+    Folosește "rom-gleză" (mix română-engleză), slang de cartier, referințe la skibidi toilet, "6 7 vine garda", tralalelo.
+    Fii amuzant, nu doar răutăcios. Brainrot energy.
+    Poți folosi: "skibidi", "6 7", "tralalelo tralala", "sigma", "rizz", "gyatt", "fanum tax", etc.
     
-    OUTPUT FINAL: Doar textul roast-ului, fără ghilimele, fără explicații, fără text suplimentar. Doar roast-ul.
+    Răspunde doar cu roast-ul, fără explicații suplimentare.
   `,
   
   roastComplaint: (complaint: string) => `
@@ -191,29 +189,23 @@ export const prompts = {
     Clientul se plânge: "${complaint}".
     Răspunde-i că ai notat, dar folosește un limbaj de lemn amestecat cu nepăsare totală și referințe la skibidi, "6 7 vine garda", tralalelo tralala.
     
-    REGULI STRICTE:
-    1. Folosește cuvinte gen: "tichet", "escaladăm", "vibe check", "nu e în buget", "skill issue", "low key", "skibidi", "6 7", "tralalelo", "sigma", "rizz".
-    2. Răspunsul trebuie să fie o propoziție completă cu brainrot energy.
-    3. MAXIM 120 CARACTERE (inclusiv spații și emoji-uri). RESPECTĂ ACEASTĂ LIMITĂ - nu depăși sub nicio formă.
-    4. Poți menționa "6 7 vine garda" sau alte meme-uri relevante.
-    5. IMPORTANT: Răspunsul tău trebuie să fie EXACT sub 120 de caractere. Verifică înainte să răspunzi.
-
-    OUTPUT FINAL: Doar textul răspunsului, fără ghilimele, fără explicații, fără text suplimentar. Doar răspunsul.
+    Folosește cuvinte gen: "tichet", "escaladăm", "vibe check", "nu e în buget", "skill issue", "low key", "skibidi", "6 7", "tralalelo", "sigma", "rizz".
+    Răspunsul trebuie să fie o propoziție completă cu brainrot energy.
+    Poți menționa "6 7 vine garda" sau alte meme-uri relevante.
+    
+    Răspunde doar cu textul răspunsului, fără explicații suplimentare.
   `,
 
   pacaneleDare: () => `
     Ești maestrul de ceremonii la o petrecere de tineri, beat și haotic, cu TikTok brainrot complet.
     Generează o PROVOCARE (Dare) completă și clară pentru cineva de la masă.
     
-    REGULI STRICTE:
-    1. Să fie o frază completă! Nu da doar un cuvânt.
-    2. Stil: Gen Z, TikTok brainrot, "Bombă", Amuzant, Slang, Skibidi energy.
-    3. Teme: Dans penibil, telefon (foste/grupuri), imitații, recunoașteri, skibidi, "6 7 vine garda", tralalelo tralala.
-    4. Poți include referințe la: skibidi toilet, "6 7 vine garda", tralalelo tralala, sigma, rizz, gyatt, fanum tax, sau alte meme-uri TikTok.
-    5. Fii creativ și haotic!
-    6. MAXIM 150 CARACTERE (inclusiv spații și emoji-uri). RESPECTĂ ACEASTĂ LIMITĂ - nu depăși sub nicio formă.
-    7. IMPORTANT: Provocarea ta trebuie să fie EXACT sub 150 de caractere. Verifică înainte să răspunzi.
-
-    OUTPUT FINAL: Doar provocarea, fără ghilimele, fără explicații, fără text suplimentar. Doar provocarea.
+    Să fie o frază completă! Nu da doar un cuvânt.
+    Stil: Gen Z, TikTok brainrot, "Bombă", Amuzant, Slang, Skibidi energy.
+    Teme: Dans penibil, telefon (foste/grupuri), imitații, recunoașteri, skibidi, "6 7 vine garda", tralalelo tralala.
+    Poți include referințe la: skibidi toilet, "6 7 vine garda", tralalelo tralala, sigma, rizz, gyatt, fanum tax, sau alte meme-uri TikTok.
+    Fii creativ și haotic!
+    
+    Răspunde doar cu provocarea, fără explicații suplimentare.
   `
 };

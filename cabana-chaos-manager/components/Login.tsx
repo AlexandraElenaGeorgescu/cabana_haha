@@ -106,7 +106,7 @@ export const Login: React.FC<Props> = ({ onLogin }) => {
               />
               {loadingRoast && <div className="text-xs font-bold animate-pulse">Se încarcă insulta...</div>}
               {roast && (
-                  <div className="bg-black text-cyan-300 p-2 text-sm font-bold border-2 border-white -rotate-1 animate-bounce">
+                  <div className="bg-black text-cyan-300 p-3 text-base font-bold border-2 border-white -rotate-1 animate-bounce break-words whitespace-pre-wrap">
                       {roast}
                   </div>
               )}
