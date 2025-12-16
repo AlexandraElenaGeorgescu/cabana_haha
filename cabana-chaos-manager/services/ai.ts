@@ -59,8 +59,7 @@ export const askAI = async (prompt: string, maxTokens = 250) => {
     const genAI = new GoogleGenerativeAI(apiKey);
     
     // Try multiple models in order - starting with free tier models
-    // Free tier models: gemini-1.5-flash (best), gemini-1.5-pro (backup), gemini-pro (legacy)
-    const models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
+    const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-pro'];
     let lastError: any = null;
     
     for (const modelName of models) {
