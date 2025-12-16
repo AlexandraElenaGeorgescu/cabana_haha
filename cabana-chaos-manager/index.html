@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ro">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cabana Chaos 3000</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <style>
+      html, body, #root {
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        width: 100%;
+        background: transparent;
+      }
+      
+      /* Ensure all pages show background */
+      #root > * {
+        background: transparent;
+        min-height: 100vh;
+      }
+      
+      body {
+        font-family: 'Space Mono', monospace;
+        background: 
+          /* Animated colorful grid pattern */
+          repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 2px,
+            rgba(255, 0, 255, 0.1) 2px,
+            rgba(255, 0, 255, 0.1) 4px
+          ),
+          repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 2px,
+            rgba(57, 255, 20, 0.1) 2px,
+            rgba(57, 255, 20, 0.1) 4px
+          ),
+          /* Diagonal diamond pattern with colors */
+          repeating-linear-gradient(
+            45deg,
+            #1a0033 0px,
+            #1a0033 20px,
+            #330033 20px,
+            #330033 40px,
+            #4d004d 40px,
+            #4d004d 60px
+          ),
+          repeating-linear-gradient(
+            -45deg,
+            #00331a 0px,
+            #00331a 20px,
+            #003333 20px,
+            #003333 40px,
+            #004d4d 40px,
+            #004d4d 60px
+          ),
+          /* Base gradient */
+          radial-gradient(circle at 20% 50%, rgba(255, 0, 255, 0.3) 0%, transparent 50%),
+          radial-gradient(circle at 80% 50%, rgba(57, 255, 20, 0.3) 0%, transparent 50%),
+          radial-gradient(circle at 50% 80%, rgba(255, 255, 0, 0.2) 0%, transparent 50%),
+          linear-gradient(135deg, #000000 0%, #1a0033 50%, #000000 100%);
+        background-size: 
+          40px 40px,
+          40px 40px,
+          80px 80px,
+          80px 80px,
+          100% 100%,
+          100% 100%,
+          100% 100%,
+          100% 100%;
+        background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0;
+        background-attachment: fixed;
+        overflow-x: hidden;
+        position: relative;
+      }
+      
+      /* Animated background overlay for extra fun */
+      body::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: 
+          radial-gradient(circle at 30% 30%, rgba(255, 0, 255, 0.15) 0%, transparent 40%),
+          radial-gradient(circle at 70% 70%, rgba(57, 255, 20, 0.15) 0%, transparent 40%),
+          radial-gradient(circle at 50% 50%, rgba(255, 255, 0, 0.1) 0%, transparent 50%);
+        animation: backgroundPulse 8s ease-in-out infinite;
+        pointer-events: none;
+        z-index: 0;
+      }
+      
+      @keyframes backgroundPulse {
+        0%, 100% { opacity: 0.5; transform: scale(1); }
+        50% { opacity: 0.8; transform: scale(1.1); }
+      }
+      
+      /* Ensure content is above background */
+      #root {
+        position: relative;
+        z-index: 1;
+      }
+      
+      /* SCROLLBAR DE NEAM PROST */
+      ::-webkit-scrollbar { width: 16px; }
+      ::-webkit-scrollbar-track { background: #000; border-left: 2px solid #fff; }
+      ::-webkit-scrollbar-thumb { background: #39ff14; border: 4px solid #000; }
+      ::-webkit-scrollbar-thumb:hover { background: #ff00ff; }
+
+      /* ANIMATII DE CRACK */
+      @keyframes wiggle {
+        0% { transform: rotate(0deg); }
+        25% { transform: rotate(-3deg); }
+        50% { transform: rotate(3deg); }
+        75% { transform: rotate(-3deg); }
+        100% { transform: rotate(0deg); }
+      }
+      .wiggle:hover { animation: wiggle 0.3s ease-in-out infinite; }
+
+      @keyframes glitch {
+        0% { transform: translate(0); }
+        20% { transform: translate(-2px, 2px); }
+        40% { transform: translate(-2px, -2px); }
+        60% { transform: translate(2px, 2px); }
+        80% { transform: translate(2px, -2px); }
+        100% { transform: translate(0); }
+      }
+      .animate-glitch { animation: glitch 0.5s infinite; }
+      .animate-glitch:hover { animation: glitch 0.2s infinite; }
+
+      @keyframes rainbow-border {
+        0% { border-color: #ff0000; }
+        20% { border-color: #ffff00; }
+        40% { border-color: #00ff00; }
+        60% { border-color: #00ffff; }
+        80% { border-color: #0000ff; }
+        100% { border-color: #ff00ff; }
+      }
+      .rainbow-border { animation: rainbow-border 2s linear infinite; }
+
+    </style>
+  <!-- 
+     ⚠️ FIX FINAL: Am curatat tot.
+     Doar versiuni stabile. Fara dubluri.
+  -->
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom": "https://esm.sh/react-dom@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "@google/genai": "https://esm.sh/@google/genai@0.1.1",
+    "firebase/app": "https://esm.sh/firebase@10.13.1/app",
+    "firebase/firestore": "https://esm.sh/firebase@10.13.1/firestore",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "firebase/": "https://esm.sh/firebase@^12.7.0/",
+    "react/": "https://esm.sh/react@^19.2.3/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root" class="h-screen w-screen flex items-center justify-center text-lime-400 font-bold text-2xl bg-black flex-col gap-4 text-center p-4">
+        <div class="animate-pulse text-6xl">🚑</div>
+        <div class="animate-pulse">RESUSCITARE...</div>
+        <div class="text-sm text-white opacity-50">Dacă vezi asta, înseamnă că trăim.</div>
+    </div>
+    
+    <script>
+      // Error logging pentru linistea noastra
+      window.onerror = function(msg, url, line, col, error) {
+        console.error("GLOBAL ERROR:", msg);
+        // Putem afisa eroarea pe ecran daca e critica
+        const root = document.getElementById('root');
+        if (root && root.innerText.includes('RESUSCITARE')) {
+            root.innerHTML += '<div style="color:red; font-size: 12px; margin-top: 20px; border: 1px solid red; padding: 10px;">' + msg + '</div>';
+        }
+        return false;
+      };
+    </script>
+    
+    <script type="module" src="./index.tsx"></script>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+// Ce avem noi aici? Data structures pentru nebunie.
+// Nu judeca, frate, e spaghetti code certificat.
+
+export type CategoryId = 'MFP' | 'CRINGE' | 'DRUNK' | 'MISS' | 'DJ';
+
+export interface Category {
+  id: CategoryId;
+  name: string;
+  description: string;
+  emoji: string;
+  color: string;
+}
+
+export interface User {
+  name: string;
+  id: string; // Timestamp ca ID, ca suntem lenesi
+}
+
+export interface Vote {
+  voter: string;
+  candidate: string;
+  category: CategoryId;
+}
+
+export interface Quote {
+  id: string;
+  author: string; // Cine a zis prostia
+  text: string;   // Ce a zis
+  addedBy: string; // Cine l-a turnat
+  timestamp: number;
+}
+
+export interface Complaint {
+  id: string;
+  text: string;   // Textul reclamației
+  aiReply: string; // Răspunsul AI
+  timestamp: number;
+  // NU salvăm numele utilizatorului - anonim!
+}
+
+export const CATEGORIES: Category[] = [
+  { id: 'MFP', name: 'MFP (Type Shit)', description: 'Cine a dat dumele alea bune? Ha ha cee? (Skibidi edition) 🚽', emoji: '👑', color: 'bg-lime-400' },
+  { id: 'CRINGE', name: 'Yakka Na (Cringe)', description: 'Momentul ăla când vrei să te ascunzi. Iaca... (6 7 vibes) 🚓', emoji: '💀', color: 'bg-orange-400' },
+  { id: 'DRUNK', name: 'Daună Totală (Bere)', description: 'S-a rupt filmul, n-ai treabă fra. Tralalelo tralala! 🎵', emoji: '🍺', color: 'bg-cyan-400' },
+  { id: 'MISS', name: 'Miss Cabana (Sase Sapte)', description: 'Cine e low key bombă? Sigma rizz! 🤌', emoji: '💅', color: 'bg-pink-500' },
+  { id: 'DJ', name: 'DJ-ul de la 3 AM', description: 'Cine a pus muzică de înmormântare? (Skibidi toilet remix) 🎵', emoji: '🎧', color: 'bg-purple-500' },
+];
