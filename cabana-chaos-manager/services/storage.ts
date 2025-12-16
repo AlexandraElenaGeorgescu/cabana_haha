@@ -134,44 +134,50 @@ export const storage = {
     const localUsers = localData.users();
     callback(localUsers);
     
-    // Wait for Supabase to be ready, then load and merge
+    // Load from Supabase IMMEDIATELY (don't wait, try right away)
     const loadFromSupabase = async () => {
-      // Wait a bit for Supabase to initialize if it's still connecting
+      // Try immediately, if not ready, retry a few times
       let retries = 0;
-      while ((dbStatus === 'connecting' || !supabase) && retries < 10) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+      while (retries < 20) { // More retries for better reliability
+        if (supabase && !isOfflineMode && (dbStatus === 'connected' || dbStatus === 'connecting')) {
+          try {
+            const { data, error } = await supabase
+              .from('users')
+              .select('name')
+              .order('joined_at', { ascending: true });
+            
+            if (!error && data) {
+              const supabaseUsers = data.map((u) => u.name);
+              const currentLocalUsers = localData.users();
+              // Merge: combine both sources, remove duplicates
+              const allUsers = Array.from(new Set([...supabaseUsers, ...currentLocalUsers]));
+              // Update localStorage with merged data
+              localStorage.setItem(KEYS.ALL_USERS, JSON.stringify(allUsers));
+              callback(allUsers);
+              return; // Success, exit retry loop
+            } else if (error && error.code !== 'PGRST116') {
+              // PGRST116 = table doesn't exist, that's OK, keep retrying
+              logger.warn("Supabase users error:", error);
+            }
+          } catch (err) {
+            logger.warn("Supabase users error:", err);
+          }
+        }
+        
+        // Wait a bit before retrying
+        if (retries < 19) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
         retries++;
       }
       
-      if (supabase && !isOfflineMode && dbStatus === 'connected') {
-        try {
-          const { data, error } = await supabase
-            .from('users')
-            .select('name')
-            .order('joined_at', { ascending: true });
-          
-          if (!error && data) {
-            const supabaseUsers = data.map((u) => u.name);
-            const currentLocalUsers = localData.users();
-            // Merge: combine both sources, remove duplicates
-            const allUsers = Array.from(new Set([...supabaseUsers, ...currentLocalUsers]));
-            // Update localStorage with merged data
-            localStorage.setItem(KEYS.ALL_USERS, JSON.stringify(allUsers));
-            callback(allUsers);
-          } else {
-            // If Supabase fails, keep using localStorage (already called above)
-            logger.warn("Supabase users error:", error);
-          }
-        } catch (err) {
-          logger.warn("Supabase users error:", err);
-          // Keep using localStorage (already called above)
-        }
-      }
+      // If we get here, Supabase failed or not available
+      // Keep using localStorage (already called above)
     };
     
-    if (supabase && !isOfflineMode) {
+    if (hasSupabaseConfig()) {
       try {
-        // Load from Supabase (with retry logic)
+        // Load from Supabase immediately (with retry logic)
         loadFromSupabase();
 
         // Real-time subscription
@@ -504,28 +510,51 @@ export const storage = {
     
     // Save to Supabase for multi-device sync (source of truth)
     if (supabase && !isOfflineMode) {
-      try {
-        const { data, error } = await supabase
-          .from('votes')
-          .upsert({
-            voter: vote.voter,
-            candidate: vote.candidate,
-            category: vote.category
-          }, { 
-            onConflict: 'voter,category',
-            ignoreDuplicates: false
-          });
-        
-        if (error) {
-          logger.warn("Cloud vote failed:", error);
+      // Retry logic for better reliability
+      let retries = 0;
+      const maxRetries = 3;
+      
+      while (retries < maxRetries) {
+        try {
+          // Wait for Supabase to be ready if still connecting
+          if (dbStatus === 'connecting' && retries < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+          
+          const { data, error } = await supabase
+            .from('votes')
+            .upsert({
+              voter: vote.voter,
+              candidate: vote.candidate,
+              category: vote.category
+            }, { 
+              onConflict: 'voter,category',
+              ignoreDuplicates: false
+            });
+          
+          if (error) {
+            logger.warn(`Cloud vote failed (attempt ${retries + 1}/${maxRetries}):`, error);
+            if (retries < maxRetries - 1) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+              retries++;
+              continue;
+            }
+            // Keep in localStorage even if cloud fails (offline support)
+          } else {
+            logger.debug("✅ Vote saved to Supabase - synced to all devices", data);
+            // Real-time subscription will update all other devices automatically
+            break; // Success, exit retry loop
+          }
+        } catch (e) {
+          logger.error(`Cloud vote error (attempt ${retries + 1}/${maxRetries}):`, e);
+          if (retries < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            retries++;
+            continue;
+          }
           // Keep in localStorage even if cloud fails (offline support)
-        } else {
-          logger.debug("✅ Vote saved to Supabase - synced to all devices");
-          // Real-time subscription will update all other devices automatically
         }
-      } catch (e) {
-        logger.error("Cloud vote error:", e);
-        // Keep in localStorage even if cloud fails (offline support)
+        break;
       }
     }
   },

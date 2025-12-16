@@ -185,6 +185,7 @@ export const prompts = {
     
     Să fie o frază completă! Nu da doar un cuvânt.
     Stil: Gen Z, TikTok brainrot, "Bombă", Amuzant, Slang, Skibidi energy.
+    Teme: Dans penibil, telefon (foste/grupuri), imitații, recunoașteri, skibidi, "6 7 vine garda", tralalelo tralala.
     Poți include referințe la: skibidi toilet, "6 7 vine garda", tralalelo tralala, sigma, rizz, gyatt, fanum tax, sau alte meme-uri TikTok.
     Fii creativ și haotic!
     
