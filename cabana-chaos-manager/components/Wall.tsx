@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Quote } from '../types';
 import { storage } from '../services/storage';
 import { BrutalButton } from './BrutalButton';
+import { logger } from '../utils/logger';
 
 interface Props {
   currentUser: string;

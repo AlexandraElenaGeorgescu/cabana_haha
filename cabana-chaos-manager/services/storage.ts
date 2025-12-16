@@ -130,47 +130,117 @@ export const storage = {
   // --- REAL TIME LISTENERS ---
 
   subscribeToUsers: (callback: (users: string[]) => void) => {
+    // Always load from localStorage FIRST for instant display
+    const localUsers = localData.users();
+    callback(localUsers);
+    
+    // Wait for Supabase to be ready, then load and merge
+    const loadFromSupabase = async () => {
+      // Wait a bit for Supabase to initialize if it's still connecting
+      let retries = 0;
+      while ((dbStatus === 'connecting' || !supabase) && retries < 10) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        retries++;
+      }
+      
+      if (supabase && !isOfflineMode && dbStatus === 'connected') {
+        try {
+          const { data, error } = await supabase
+            .from('users')
+            .select('name')
+            .order('joined_at', { ascending: true });
+          
+          if (!error && data) {
+            const supabaseUsers = data.map((u) => u.name);
+            const currentLocalUsers = localData.users();
+            // Merge: combine both sources, remove duplicates
+            const allUsers = Array.from(new Set([...supabaseUsers, ...currentLocalUsers]));
+            // Update localStorage with merged data
+            localStorage.setItem(KEYS.ALL_USERS, JSON.stringify(allUsers));
+            callback(allUsers);
+          } else {
+            // If Supabase fails, keep using localStorage (already called above)
+            logger.warn("Supabase users error:", error);
+          }
+        } catch (err) {
+          logger.warn("Supabase users error:", err);
+          // Keep using localStorage (already called above)
+        }
+      }
+    };
+    
     if (supabase && !isOfflineMode) {
       try {
-        // Initial load
-        supabase
-          .from('users')
-          .select('name')
-          .order('joined_at', { ascending: true })
-          .then(({ data, error }: { data: { name: string }[] | null; error: unknown }) => {
-            if (!error && data) {
-              callback(data.map((u) => u.name));
-            } else {
-              callback(localData.users());
-            }
-          });
+        // Load from Supabase (with retry logic)
+        loadFromSupabase();
 
         // Real-time subscription
         const channel = supabase
           .channel('users-changes')
           .on('postgres_changes', 
             { event: '*', schema: 'public', table: 'users' },
-            () => {
-              supabase
-                .from('users')
-                .select('name')
-                .order('joined_at', { ascending: true })
-                .then(({ data }: { data: { name: string }[] | null }) => {
-                  if (data) callback(data.map((u) => u.name));
-                });
+            async () => {
+              try {
+                const { data, error } = await supabase
+                  .from('users')
+                  .select('name')
+                  .order('joined_at', { ascending: true });
+                
+                if (!error && data) {
+                  const supabaseUsers = data.map((u) => u.name);
+                  const localUsers = localData.users();
+                  const allUsers = Array.from(new Set([...supabaseUsers, ...localUsers]));
+                  localStorage.setItem(KEYS.ALL_USERS, JSON.stringify(allUsers));
+                  callback(allUsers);
+                }
+              } catch (err) {
+                logger.error("Real-time users update error:", err);
+              }
             }
           )
           .subscribe();
 
+        // Also listen to localStorage updates for immediate feedback
+        const storageHandler = () => {
+          const localUsers = localData.users();
+          // Update IMMEDIATELY with localStorage data
+          callback(localUsers);
+          
+          // Then merge with Supabase in background if available
+          if (supabase && !isOfflineMode && dbStatus === 'connected') {
+            supabase
+              .from('users')
+              .select('name')
+              .order('joined_at', { ascending: true })
+              .then(({ data, error }: { data: { name: string }[] | null; error: unknown }) => {
+                if (!error && data) {
+                  const supabaseUsers = data.map((u) => u.name);
+                  const currentLocalUsers = localData.users();
+                  const allUsers = Array.from(new Set([...supabaseUsers, ...currentLocalUsers]));
+                  localStorage.setItem(KEYS.ALL_USERS, JSON.stringify(allUsers));
+                  callback(allUsers);
+                }
+              })
+              .catch(() => {
+                // If Supabase fails, keep using localStorage (already updated above)
+              });
+          }
+        };
+        window.addEventListener('storage-update', storageHandler);
+
         return () => {
           supabase.removeChannel(channel);
+          window.removeEventListener('storage-update', storageHandler);
         };
       } catch (e) {
-        callback(localData.users());
-        return () => {};
+        logger.error("Users subscription error:", e);
+        // Keep using localStorage
+        const handler = () => callback(localData.users());
+        window.addEventListener('storage-update', handler);
+        return () => window.removeEventListener('storage-update', handler);
       }
     } else {
-      callback(localData.users());
+      // LocalStorage only - listen for updates
       const handler = () => callback(localData.users());
       window.addEventListener('storage-update', handler);
       return () => window.removeEventListener('storage-update', handler);
@@ -197,15 +267,22 @@ export const storage = {
             }
             
             if (data) {
-              // Merge with localStorage (local takes priority for immediate updates)
+              // For multi-device sync: Supabase is source of truth
+              // Merge with localStorage, but Supabase takes priority for cross-device sync
               const localVotes = localData.votes();
-              const allVotes = [...data, ...localVotes];
-              // Remove duplicates by voter+category (keep local version)
-              const uniqueVotes = Array.from(
-                new Map(allVotes.map(v => [`${v.voter}-${v.category}`, v])).values()
-              );
+              // Create map from Supabase (source of truth for other devices)
+              const votesData = data as Vote[];
+              const supabaseMap = new Map<string, Vote>(votesData.map((v: Vote) => [`${v.voter}-${v.category}`, v]));
+              // Add local votes that aren't in Supabase yet (pending sync)
+              localVotes.forEach((v: Vote) => {
+                const key = `${v.voter}-${v.category}`;
+                if (!supabaseMap.has(key)) {
+                  supabaseMap.set(key, v);
+                }
+              });
+              const uniqueVotes: Vote[] = Array.from(supabaseMap.values());
               
-              // Update localStorage with merged data so it persists
+              // Update localStorage with merged data for cache
               localStorage.setItem(KEYS.VOTES, JSON.stringify(uniqueVotes));
               
               callback(uniqueVotes);
@@ -229,14 +306,21 @@ export const storage = {
                   .select('*');
                 
                 if (!error && data) {
-                  // Merge with localStorage
+                  // Real-time update from other devices: Supabase is source of truth
                   const localVotes = localData.votes();
-                  const allVotes = [...data, ...localVotes];
-                  const uniqueVotes = Array.from(
-                    new Map(allVotes.map(v => [`${v.voter}-${v.category}`, v])).values()
-                  );
+                  // Create map from Supabase (source of truth)
+                  const votesData = data as Vote[];
+                  const supabaseMap = new Map<string, Vote>(votesData.map((v: Vote) => [`${v.voter}-${v.category}`, v]));
+                  // Add local votes that aren't in Supabase yet (pending sync)
+                  localVotes.forEach((v: Vote) => {
+                    const key = `${v.voter}-${v.category}`;
+                    if (!supabaseMap.has(key)) {
+                      supabaseMap.set(key, v);
+                    }
+                  });
+                  const uniqueVotes: Vote[] = Array.from(supabaseMap.values());
                   
-                  // Update localStorage with merged data
+                  // Update localStorage with merged data for cache
                   localStorage.setItem(KEYS.VOTES, JSON.stringify(uniqueVotes));
                   
                   callback(uniqueVotes);
@@ -249,30 +333,12 @@ export const storage = {
           .subscribe();
 
         // Also listen to localStorage updates for immediate feedback
+        // This handles local updates (optimistic UI), but real-time sync comes from Supabase subscription above
         const storageHandler = () => {
           const localVotes = localData.votes();
-          // Update IMMEDIATELY with localStorage data (no waiting for Supabase)
+          // Update IMMEDIATELY with localStorage data for local actions
+          // Real-time subscription will sync with other devices via Supabase
           callback(localVotes);
-          
-          // Then merge with Supabase in background (async, non-blocking)
-          supabase
-            .from('votes')
-            .select('*')
-            .then(({ data, error }: { data: Vote[] | null; error: unknown }) => {
-              if (!error && data) {
-                const allVotes = [...data, ...localVotes];
-                const uniqueVotes = Array.from(
-                  new Map(allVotes.map(v => [`${v.voter}-${v.category}`, v])).values()
-                );
-                // Update again with merged data
-                callback(uniqueVotes);
-                // Also update localStorage with merged data
-                localStorage.setItem(KEYS.VOTES, JSON.stringify(uniqueVotes));
-              }
-            })
-            .catch(() => {
-              // If Supabase fails, keep using localStorage (already updated above)
-            });
         };
         window.addEventListener('storage-update', storageHandler);
 
@@ -323,13 +389,19 @@ export const storage = {
                 addedBy: q.added_by || q.addedBy || 'Unknown', // Map added_by back to addedBy
                 timestamp: q.timestamp || Date.now()
               }));
-              // Merge with localStorage (local takes priority for immediate updates)
+              // For multi-device sync: Supabase is source of truth
               const localQuotes = localData.quotes();
-              const allQuotes = [...mappedQuotes, ...localQuotes];
-              // Remove duplicates by ID
-              const uniqueQuotes = Array.from(
-                new Map(allQuotes.map(q => [q.id, q])).values()
-              );
+              // Create map from Supabase (source of truth for other devices)
+              const supabaseMap = new Map(mappedQuotes.map(q => [q.id, q]));
+              // Add local quotes that aren't in Supabase yet (pending sync)
+              localQuotes.forEach(q => {
+                if (!supabaseMap.has(q.id)) {
+                  supabaseMap.set(q.id, q);
+                }
+              });
+              const uniqueQuotes = Array.from(supabaseMap.values());
+              // Update localStorage with merged data for cache
+              localStorage.setItem(KEYS.QUOTES, JSON.stringify(uniqueQuotes));
               callback(uniqueQuotes.sort((a, b) => b.timestamp - a.timestamp));
             }
           } catch (err) {
@@ -419,14 +491,18 @@ export const storage = {
   // --- ACTIONS ---
 
   addVote: async (vote: Vote) => {
-    // Always save to localStorage first for immediate feedback
+    // Save to localStorage first for immediate local feedback
     const votes = localData.votes();
     const filtered = votes.filter((v: Vote) => !(v.voter === vote.voter && v.category === vote.category));
     filtered.push(vote);
     localStorage.setItem(KEYS.VOTES, JSON.stringify(filtered));
-    window.dispatchEvent(new Event('storage-update'));
     
-    // Then try to save to Supabase
+    // Dispatch event for local UI update
+    setTimeout(() => {
+      window.dispatchEvent(new Event('storage-update'));
+    }, 0);
+    
+    // Save to Supabase for multi-device sync (source of truth)
     if (supabase && !isOfflineMode) {
       try {
         const { data, error } = await supabase
@@ -442,13 +518,14 @@ export const storage = {
         
         if (error) {
           logger.warn("Cloud vote failed:", error);
-          // Keep in localStorage even if cloud fails
+          // Keep in localStorage even if cloud fails (offline support)
         } else {
-          logger.debug("✅ Vote saved to Supabase:", data);
+          logger.debug("✅ Vote saved to Supabase - synced to all devices");
+          // Real-time subscription will update all other devices automatically
         }
       } catch (e) {
         logger.error("Cloud vote error:", e);
-        // Keep in localStorage even if cloud fails
+        // Keep in localStorage even if cloud fails (offline support)
       }
     }
   },
@@ -458,27 +535,33 @@ export const storage = {
     const votes = localData.votes();
     const filtered = votes.filter((v: Vote) => !(v.voter === voter && v.category === category));
     localStorage.setItem(KEYS.VOTES, JSON.stringify(filtered));
-    window.dispatchEvent(new Event('storage-update'));
     
-    // Then try to remove from Supabase
+    // Dispatch event SYNCHRONOUSLY to ensure immediate update
+    // Use setTimeout with 0 to ensure it happens after state update in component
+    setTimeout(() => {
+      window.dispatchEvent(new Event('storage-update'));
+    }, 0);
+    
+    // Then try to remove from Supabase (async, non-blocking)
     if (supabase && !isOfflineMode) {
-      try {
-        const { error } = await supabase
-          .from('votes')
-          .delete()
-          .eq('voter', voter)
-          .eq('category', category);
-        
-        if (error) {
-          logger.warn("Cloud vote removal failed:", error);
+      // Don't await - let it run in background
+      supabase
+        .from('votes')
+        .delete()
+        .eq('voter', voter)
+        .eq('category', category)
+        .then(({ error }) => {
+          if (error) {
+            logger.warn("Cloud vote removal failed:", error);
+            // Keep removed from localStorage even if cloud fails
+          } else {
+            logger.debug("✅ Vote removed from Supabase");
+          }
+        })
+        .catch((e) => {
+          logger.error("Cloud vote removal error:", e);
           // Keep removed from localStorage even if cloud fails
-        } else {
-          logger.debug("✅ Vote removed from Supabase");
-        }
-      } catch (e) {
-        logger.error("Cloud vote removal error:", e);
-        // Keep removed from localStorage even if cloud fails
-      }
+        });
     }
   },
 

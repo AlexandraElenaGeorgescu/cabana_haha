@@ -45,20 +45,11 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
     };
 
     try {
-      // Update local state immediately for instant UI feedback
-      const updatedVotes = votes.filter(v => !(v.voter === currentUser && v.category === activeCategory));
-      updatedVotes.push(newVote);
-      setVotes(updatedVotes);
       setSelectedUser('');
       setIsChangingVote(false);
       
-      // Then save to storage (async, non-blocking)
-      storage.addVote(newVote).catch((error) => {
-        logger.error("Error adding vote:", error);
-        // Revert on error
-        setVotes(votes);
-        alert("Eroare la salvare vot! Încearcă din nou.");
-      });
+      // Save to storage - subscription will update UI immediately via localStorage
+      await storage.addVote(newVote);
       
       // TRASH EXPLOSION FX
       setExplosion(true);
@@ -87,19 +78,24 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
 
   const handleRemoveVote = async () => {
     try {
-      // Update local state immediately for instant UI feedback
-      const updatedVotes = votes.filter(v => !(v.voter === currentUser && v.category === activeCategory));
-      setVotes(updatedVotes);
+      // Save current votes for potential revert
+      const previousVotes = [...votes];
+      
+      // Update UI IMMEDIATELY (optimistic update)
+      setVotes(prevVotes => prevVotes.filter(v => !(v.voter === currentUser && v.category === activeCategory)));
       setSelectedUser('');
       setIsChangingVote(false);
       
       // Then remove from storage (async, non-blocking)
-      storage.removeVote(currentUser, activeCategory).catch((error) => {
+      try {
+        await storage.removeVote(currentUser, activeCategory);
+      } catch (error) {
         logger.error("Error removing vote:", error);
         // Revert on error
-        setVotes(votes);
+        setVotes(previousVotes);
         alert("Eroare la ștergere vot! Încearcă din nou.");
-      });
+        return;
+      }
       
       // TRASH EXPLOSION FX
       setExplosion(true);
