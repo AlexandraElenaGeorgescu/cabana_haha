@@ -59,7 +59,8 @@ export const askAI = async (prompt: string, maxTokens = 250) => {
     const genAI = new GoogleGenerativeAI(apiKey);
     
     // Try multiple models in order - starting with free tier models
-    const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-pro'];
+    // Using correct model names that exist in Google AI Studio
+    const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3.0-pro'];
     let lastError: any = null;
     
     for (const modelName of models) {
@@ -86,6 +87,11 @@ export const askAI = async (prompt: string, maxTokens = 250) => {
         }
       } catch (modelError: any) {
         console.warn(`⚠️ Model ${modelName} failed:`, modelError?.message || modelError);
+        console.warn(`📋 Error details:`, {
+          code: modelError?.code,
+          status: modelError?.status,
+          statusText: modelError?.statusText
+        });
         lastError = modelError;
         continue;
       }
@@ -94,13 +100,18 @@ export const askAI = async (prompt: string, maxTokens = 250) => {
     throw lastError || new Error('All models failed');
     
   } catch (e: any) {
-    console.error("AI Error Details:", {
+    console.error("❌ AI Error Details:", {
       message: e?.message,
       status: e?.status,
       statusText: e?.statusText,
       code: e?.code,
       error: e
     });
+    console.error("💡 Troubleshooting tips:");
+    console.error("   1. Check if API key is correct in .env.local (VITE_GEMINI_API_KEY)");
+    console.error("   2. Verify API key at: https://aistudio.google.com/app/apikey");
+    console.error("   3. Check if you've exceeded free tier quota (15 req/min, 1.5M tokens/day)");
+    console.error("   4. Restart dev server after changing .env.local");
     
     // Helper function for fallback
     const getFallback = () => {

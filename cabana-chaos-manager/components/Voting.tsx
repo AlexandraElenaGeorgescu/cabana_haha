@@ -36,6 +36,7 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
     };
 
     await storage.addVote(newVote);
+    setSelectedUser('');
     
     // TRASH EXPLOSION FX
     setExplosion(true);
@@ -54,7 +55,20 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
       .sort(([, a], [, b]) => b - a);
   };
 
+  const getCurrentUserVote = (catId: CategoryId): Vote | undefined => {
+    return votes.find(v => v.voter === currentUser && v.category === catId);
+  };
+
+  const handleRemoveVote = async () => {
+    await storage.removeVote(currentUser, activeCategory);
+    setSelectedUser('');
+    // TRASH EXPLOSION FX
+    setExplosion(true);
+    setTimeout(() => setExplosion(false), 1000);
+  };
+
   const activeCatData = CATEGORIES.find(c => c.id === activeCategory)!;
+  const currentVote = getCurrentUserVote(activeCategory);
 
   return (
     <div className="flex flex-col gap-6 w-full max-w-5xl mx-auto px-2 sm:px-4" style={{ transform: 'scale(0.8)', transformOrigin: 'top center' }}>
@@ -97,21 +111,50 @@ export const Voting: React.FC<Props> = ({ currentUser }) => {
           <div className="absolute -top-6 left-3 bg-black text-lime-400 font-black text-2xl px-4 py-1.5 border-2 border-white transform -rotate-2 animate-pulse shadow-[3px_3px_0px_0px_lime]">
               NASUL SAU PULA? 🎰
           </div>
-          <div className="mt-4 flex gap-3 flex-col sm:flex-row">
-            <select 
-              value={selectedUser}
-              onChange={(e) => setSelectedUser(e.target.value)}
-              className="flex-1 p-3 border-2 border-black bg-white text-black font-black text-lg focus:outline-none focus:bg-lime-300 focus:text-black focus:ring-2 ring-black shadow-[3px_3px_0px_0px_black] cursor-pointer"
-            >
-              <option value="" className="bg-white text-black">-- CINE ȘI-O IA? --</option>
-              {users.map(u => (
-                <option key={u} value={u} className="bg-white text-black font-bold">{u}</option>
-              ))}
-            </select>
-            <BrutalButton onClick={handleVote} className="bg-red-600 text-white hover:bg-red-500 border-black text-lg shadow-[4px_4px_0px_0px_white] hover:shadow-[3px_3px_0px_0px_black] hover:scale-105">
-              DĂ-I FRATE 💣
-            </BrutalButton>
-          </div>
+          {currentVote ? (
+            <div className="mt-4 p-4 bg-yellow-300 border-4 border-black shadow-[4px_4px_0px_0px_black]">
+              <p className="font-black text-lg text-black mb-3">
+                💀 AI VOTAT DEJA PE: <span className="text-red-600 uppercase">{currentVote.candidate}</span>
+              </p>
+              <div className="flex gap-3 flex-col sm:flex-row">
+                <BrutalButton 
+                  onClick={handleRemoveVote} 
+                  className="flex-1 bg-red-600 text-white hover:bg-red-500 border-black text-lg shadow-[4px_4px_0px_0px_white] hover:shadow-[3px_3px_0px_0px_black] hover:scale-105"
+                >
+                  RETRAGE VOTUL 🗑️
+                </BrutalButton>
+                <BrutalButton 
+                  onClick={() => {
+                    setSelectedUser(currentVote.candidate);
+                    // Scroll to select
+                    setTimeout(() => {
+                      const select = document.querySelector('select');
+                      if (select) select.focus();
+                    }, 100);
+                  }}
+                  className="flex-1 bg-blue-600 text-white hover:bg-blue-500 border-black text-lg shadow-[4px_4px_0px_0px_white] hover:shadow-[3px_3px_0px_0px_black] hover:scale-105"
+                >
+                  SCHIMBĂ VOTUL 🔄
+                </BrutalButton>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 flex gap-3 flex-col sm:flex-row">
+              <select 
+                value={selectedUser}
+                onChange={(e) => setSelectedUser(e.target.value)}
+                className="flex-1 p-3 border-2 border-black bg-white text-black font-black text-lg focus:outline-none focus:bg-lime-300 focus:text-black focus:ring-2 ring-black shadow-[3px_3px_0px_0px_black] cursor-pointer"
+              >
+                <option value="" className="bg-white text-black">-- CINE ȘI-O IA? --</option>
+                {users.map(u => (
+                  <option key={u} value={u} className="bg-white text-black font-bold">{u}</option>
+                ))}
+              </select>
+              <BrutalButton onClick={handleVote} className="bg-red-600 text-white hover:bg-red-500 border-black text-lg shadow-[4px_4px_0px_0px_white] hover:shadow-[3px_3px_0px_0px_black] hover:scale-105">
+                DĂ-I FRATE 💣
+              </BrutalButton>
+            </div>
+          )}
           
           {explosion && (
             <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-50 overflow-hidden bg-black/80 backdrop-blur-sm">

@@ -1,4 +1,4 @@
-import { Quote, User, Vote, Complaint } from '../types';
+import { Quote, User, Vote, Complaint, CategoryId } from '../types';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseConfig, hasSupabaseConfig } from './supabaseConfig';
 
@@ -384,6 +384,35 @@ export const storage = {
       } catch (e) {
         console.error("Cloud vote error:", e);
         // Keep in localStorage even if cloud fails
+      }
+    }
+  },
+
+  removeVote: async (voter: string, category: CategoryId) => {
+    // Remove from localStorage first for immediate feedback
+    const votes = localData.votes();
+    const filtered = votes.filter((v: Vote) => !(v.voter === voter && v.category === category));
+    localStorage.setItem(KEYS.VOTES, JSON.stringify(filtered));
+    window.dispatchEvent(new Event('storage-update'));
+    
+    // Then try to remove from Supabase
+    if (supabase && !isOfflineMode) {
+      try {
+        const { error } = await supabase
+          .from('votes')
+          .delete()
+          .eq('voter', voter)
+          .eq('category', category);
+        
+        if (error) {
+          console.error("Cloud vote removal failed:", error);
+          // Keep removed from localStorage even if cloud fails
+        } else {
+          console.log("✅ Vote removed from Supabase");
+        }
+      } catch (e) {
+        console.error("Cloud vote removal error:", e);
+        // Keep removed from localStorage even if cloud fails
       }
     }
   },
