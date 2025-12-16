@@ -15,16 +15,22 @@ export const Login: React.FC<Props> = ({ onLogin }) => {
   const [mode, setMode] = useState<'SELECT' | 'CREATE'>('CREATE');
   const [roast, setRoast] = useState<string | null>(null);
   const [loadingRoast, setLoadingRoast] = useState(false);
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   useEffect(() => {
     const unsubscribe = storage.subscribeToUsers((users) => {
       setExistingUsers(users);
-      if (users.length > 0 && mode === 'CREATE') {
+      // Only auto-switch to SELECT on initial load if users exist
+      // After that, let user choose freely
+      if (!hasInitialized && users.length > 0) {
         setMode('SELECT');
+        setHasInitialized(true);
+      } else if (!hasInitialized) {
+        setHasInitialized(true);
       }
     });
     return () => unsubscribe();
-  }, [mode]);
+  }, [hasInitialized]);
 
   const handleNameBlur = useCallback(async () => {
     if (name.length > 2 && !roast) {
